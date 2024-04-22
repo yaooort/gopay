@@ -7,7 +7,7 @@
 [![Github](https://img.shields.io/github/followers/iGoogle-ink?label=Follow&style=social)](https://github.com/iGoogle-ink)
 [![Github](https://img.shields.io/github/forks/go-pay/gopay?label=Fork&style=social)](https://github.com/go-pay/gopay/fork)
 
-[![Golang](https://img.shields.io/badge/golang-1.18-brightgreen.svg)](https://golang.google.cn)
+[![Golang](https://img.shields.io/badge/golang-1.20-brightgreen.svg)](https://golang.google.cn)
 [![GoDoc](https://img.shields.io/badge/doc-pkg.go.dev-informational.svg)](https://pkg.go.dev/github.com/go-pay/gopay)
 [![Go](https://github.com/go-pay/gopay/actions/workflows/go.yml/badge.svg)](https://github.com/go-pay/gopay/actions/workflows/go.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/go-pay/gopay)](https://github.com/go-pay/gopay/releases)
@@ -29,7 +29,7 @@ go get -u github.com/go-pay/gopay
 ```go
 import (
     "github.com/go-pay/gopay"
-    "github.com/go-pay/gopay/pkg/xlog"
+    "github.com/go-pay/xlog"
 )
 
 func main() {
@@ -52,6 +52,7 @@ func main() {
 * #### [拉卡拉支付](https://github.com/go-pay/gopay/blob/main/doc/lakala.md)
 * #### [Paypal支付](https://github.com/go-pay/gopay/blob/main/doc/paypal.md)
 * #### [Apple支付校验](https://github.com/go-pay/gopay/blob/main/doc/apple.md)
+* #### [扫呗支付](https://github.com/go-pay/gopay/blob/main/doc/saobei.md)
 
 ---
 
@@ -80,8 +81,8 @@ func main() {
 
 QQ群：
 <img width="280" height="280" src=".github/qq_gopay.png"/>
-加微信拉群：
-<img width="280" height="280" src=".github/wechat_jerry.png"/>
+微信群：
+<img width="280" height="280" src=".github/wx_gopay.png"/>
 
 ---
 

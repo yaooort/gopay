@@ -7,8 +7,8 @@ import (
 
 	"github.com/go-pay/gopay"
 	"github.com/go-pay/gopay/alipay/cert"
-	"github.com/go-pay/gopay/pkg/util"
-	"github.com/go-pay/gopay/pkg/xlog"
+	"github.com/go-pay/util"
+	"github.com/go-pay/xlog"
 )
 
 var (
@@ -22,7 +22,7 @@ var (
 )
 
 func TestMain(m *testing.M) {
-
+	xlog.Level = xlog.DebugLevel
 	// 初始化支付宝客户端
 	//    appid：应用ID
 	//    privateKey：应用私钥，支持PKCS1和PKCS8
@@ -41,6 +41,9 @@ func TestMain(m *testing.M) {
 		// SetAppAuthToken("")
 		SetReturnUrl("https://www.fmm.ink").
 		SetNotifyUrl("https://www.fmm.ink")
+
+	// 设置biz_content加密KEY，设置此参数默认开启加密（目前不可用，设置后会报错）
+	//client.SetAESKey("KvKUTqSVZX2fUgmxnFyMaQ==")
 
 	// 自动同步验签（只支持证书模式）
 	// 传入 支付宝公钥证书 alipayPublicCert.crt 内容

@@ -3,7 +3,7 @@ package apple
 import (
 	"context"
 
-	"github.com/go-pay/gopay/pkg/xhttp"
+	"github.com/go-pay/xhttp"
 )
 
 const (
@@ -20,7 +20,7 @@ const (
 func VerifyReceipt(ctx context.Context, url, pwd, receipt string) (rsp *VerifyResponse, err error) {
 	req := &VerifyRequest{Receipt: receipt, Password: pwd}
 	rsp = new(VerifyResponse)
-	_, err = xhttp.NewClient().Type(xhttp.TypeJSON).Post(url).SendStruct(req).EndStruct(ctx, rsp)
+	_, err = xhttp.NewClient().Req(xhttp.TypeJSON).Post(url).SendStruct(req).EndStruct(ctx, rsp)
 	if err != nil {
 		return nil, err
 	}

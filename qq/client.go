@@ -2,27 +2,32 @@ package qq
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/md5"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"hash"
 	"strings"
 	"sync"
 
 	"github.com/go-pay/gopay"
-	"github.com/go-pay/gopay/pkg/util"
-	"github.com/go-pay/gopay/pkg/xhttp"
-	"github.com/go-pay/gopay/pkg/xlog"
+	"github.com/go-pay/xhttp"
+	"github.com/go-pay/xlog"
 )
 
 type Client struct {
 	MchId       string
 	ApiKey      string
 	IsProd      bool
-	bodySize    int // http response body size(MB), default is 10MB
 	DebugSwitch gopay.DebugSwitch
-	certificate *tls.Certificate
 	mu          sync.RWMutex
+	sha256Hash  hash.Hash
+	md5Hash     hash.Hash
+	hc          *xhttp.Client
+	tlsHc       *xhttp.Client
 }
 
 // 初始化QQ客户端（正式环境）
@@ -33,13 +38,17 @@ func NewClient(mchId, apiKey string) (client *Client) {
 		MchId:       mchId,
 		ApiKey:      apiKey,
 		DebugSwitch: gopay.DebugOff,
+		sha256Hash:  hmac.New(sha256.New, []byte(apiKey)),
+		md5Hash:     md5.New(),
+		hc:          xhttp.NewClient(),
+		tlsHc:       xhttp.NewClient(),
 	}
 }
 
 // SetBodySize 设置http response body size(MB)
 func (q *Client) SetBodySize(sizeMB int) {
 	if sizeMB > 0 {
-		q.bodySize = sizeMB
+		q.hc.SetBodySize(sizeMB)
 	}
 }
 
@@ -48,7 +57,38 @@ func (q *Client) SetBodySize(sizeMB int) {
 // url：完整url地址，例如：https://qpay.qq.com/cgi-bin/pay/qpay_unified_order.cgi
 // tlsConfig：tls配置，如无需证书请求，传nil
 func (q *Client) PostQQAPISelf(ctx context.Context, bm gopay.BodyMap, url string, tlsConfig *tls.Config) (bs []byte, err error) {
-	return q.doQQ(ctx, bm, url, tlsConfig)
+	if bm.GetString("mch_id") == gopay.NULL {
+		bm.Set("mch_id", q.MchId)
+	}
+	if bm.GetString("fee_type") == gopay.NULL {
+		bm.Set("fee_type", "CNY")
+	}
+	if bm.GetString("sign") == gopay.NULL {
+		sign := GetReleaseSign(q.ApiKey, bm.GetString("sign_type"), bm)
+		bm.Set("sign", sign)
+	}
+	req := GenerateXml(bm)
+	if q.DebugSwitch == gopay.DebugOn {
+		xlog.Debugf("QQ_Request: %s", req)
+	}
+	httpClient := xhttp.NewClient()
+	if q.IsProd && tlsConfig != nil {
+		httpClient.SetTLSConfig(tlsConfig)
+	}
+	res, bs, err := httpClient.Req(xhttp.TypeXML).Post(url).SendString(req).EndBytes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if q.DebugSwitch == gopay.DebugOn {
+		xlog.Debugf("QQ_Response: %s%d %s%s", xlog.Red, res.StatusCode, xlog.Reset, string(bs))
+	}
+	if res.StatusCode != 200 {
+		return nil, fmt.Errorf("HTTP Request Error, StatusCode = %d", res.StatusCode)
+	}
+	if strings.Contains(string(bs), "HTML") {
+		return nil, errors.New(string(bs))
+	}
+	return bs, nil
 }
 
 // 提交付款码支付
@@ -59,7 +99,7 @@ func (q *Client) MicroPay(ctx context.Context, bm gopay.BodyMap) (qqRsp *MicroPa
 		return nil, err
 	}
 	bm.Set("trade_type", TradeType_MicroPay)
-	bs, err := q.doQQ(ctx, bm, microPay, nil)
+	bs, err := q.doQQPost(ctx, bm, microPay)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +117,7 @@ func (q *Client) Reverse(ctx context.Context, bm gopay.BodyMap) (qqRsp *ReverseR
 	if err != nil {
 		return nil, err
 	}
-	bs, err := q.doQQ(ctx, bm, reverse, nil)
+	bs, err := q.doQQPost(ctx, bm, reverse)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +135,7 @@ func (q *Client) UnifiedOrder(ctx context.Context, bm gopay.BodyMap) (qqRsp *Uni
 	if err != nil {
 		return nil, err
 	}
-	bs, err := q.doQQ(ctx, bm, unifiedOrder, nil)
+	bs, err := q.doQQPost(ctx, bm, unifiedOrder)
 	if err != nil {
 		return nil, err
 	}
@@ -113,10 +153,10 @@ func (q *Client) OrderQuery(ctx context.Context, bm gopay.BodyMap) (qqRsp *Order
 	if err != nil {
 		return nil, err
 	}
-	if bm.GetString("out_trade_no") == util.NULL && bm.GetString("transaction_id") == util.NULL {
+	if bm.GetString("out_trade_no") == gopay.NULL && bm.GetString("transaction_id") == gopay.NULL {
 		return nil, errors.New("out_trade_no and transaction_id are not allowed to be null at the same time")
 	}
-	bs, err := q.doQQ(ctx, bm, orderQuery, nil)
+	bs, err := q.doQQPost(ctx, bm, orderQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +174,7 @@ func (q *Client) CloseOrder(ctx context.Context, bm gopay.BodyMap) (qqRsp *Close
 	if err != nil {
 		return nil, err
 	}
-	bs, err := q.doQQ(ctx, bm, orderClose, nil)
+	bs, err := q.doQQPost(ctx, bm, orderClose)
 	if err != nil {
 		return nil, err
 	}
@@ -156,14 +196,10 @@ func (q *Client) Refund(ctx context.Context, bm gopay.BodyMap, certFilePath, key
 	if err != nil {
 		return nil, err
 	}
-	if bm.GetString("out_trade_no") == util.NULL && bm.GetString("transaction_id") == util.NULL {
+	if bm.GetString("out_trade_no") == gopay.NULL && bm.GetString("transaction_id") == gopay.NULL {
 		return nil, errors.New("out_trade_no and transaction_id are not allowed to be null at the same time")
 	}
-	tlsConfig, err := q.addCertConfig(certFilePath, keyFilePath, pkcs12FilePath)
-	if err != nil {
-		return nil, err
-	}
-	bs, err := q.doQQ(ctx, bm, refund, tlsConfig)
+	bs, err := q.doQQPostTLS(ctx, bm, refund)
 	if err != nil {
 		return nil, err
 	}
@@ -181,10 +217,10 @@ func (q *Client) RefundQuery(ctx context.Context, bm gopay.BodyMap) (qqRsp *Refu
 	if err != nil {
 		return nil, err
 	}
-	if bm.GetString("refund_id") == util.NULL && bm.GetString("out_refund_no") == util.NULL && bm.GetString("transaction_id") == util.NULL && bm.GetString("out_trade_no") == util.NULL {
+	if bm.GetString("refund_id") == gopay.NULL && bm.GetString("out_refund_no") == gopay.NULL && bm.GetString("transaction_id") == gopay.NULL && bm.GetString("out_trade_no") == gopay.NULL {
 		return nil, errors.New("refund_id, out_refund_no, out_trade_no, transaction_id are not allowed to be null at the same time")
 	}
-	bs, err := q.doQQ(ctx, bm, refundQuery, nil)
+	bs, err := q.doQQPost(ctx, bm, refundQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -200,15 +236,15 @@ func (q *Client) RefundQuery(ctx context.Context, bm gopay.BodyMap) (qqRsp *Refu
 func (q *Client) StatementDown(ctx context.Context, bm gopay.BodyMap) (qqRsp string, err error) {
 	err = bm.CheckEmptyError("nonce_str", "bill_date", "bill_type")
 	if err != nil {
-		return util.NULL, err
+		return gopay.NULL, err
 	}
 	billType := bm.GetString("bill_type")
 	if billType != "ALL" && billType != "SUCCESS" && billType != "REFUND" && billType != "RECHAR" {
-		return util.NULL, errors.New("bill_type error, please reference: https://qpay.qq.com/buss/wiki/38/1209")
+		return gopay.NULL, errors.New("bill_type error, please reference: https://qpay.qq.com/buss/wiki/38/1209")
 	}
-	bs, err := q.doQQ(ctx, bm, statementDown, nil)
+	bs, err := q.doQQPost(ctx, bm, statementDown)
 	if err != nil {
-		return util.NULL, err
+		return gopay.NULL, err
 	}
 	return string(bs), nil
 }
@@ -218,45 +254,68 @@ func (q *Client) StatementDown(ctx context.Context, bm gopay.BodyMap) (qqRsp str
 func (q *Client) AccRoll(ctx context.Context, bm gopay.BodyMap) (qqRsp string, err error) {
 	err = bm.CheckEmptyError("nonce_str", "bill_date", "acc_type")
 	if err != nil {
-		return util.NULL, err
+		return gopay.NULL, err
 	}
 	accType := bm.GetString("acc_type")
 	if accType != "CASH" && accType != "MARKETING" {
-		return util.NULL, errors.New("acc_type error, please reference: https://qpay.qq.com/buss/wiki/38/3089")
+		return gopay.NULL, errors.New("acc_type error, please reference: https://qpay.qq.com/buss/wiki/38/3089")
 	}
-	bs, err := q.doQQ(ctx, bm, accRoll, nil)
+	bs, err := q.doQQPost(ctx, bm, accRoll)
 	if err != nil {
-		return util.NULL, err
+		return gopay.NULL, err
 	}
 	return string(bs), nil
 }
 
 // 向QQ发送请求
-func (q *Client) doQQ(ctx context.Context, bm gopay.BodyMap, url string, tlsConfig *tls.Config) (bs []byte, err error) {
-
-	if bm.GetString("mch_id") == util.NULL {
+func (q *Client) doQQPost(ctx context.Context, bm gopay.BodyMap, url string) (bs []byte, err error) {
+	if bm.GetString("mch_id") == gopay.NULL {
 		bm.Set("mch_id", q.MchId)
 	}
-	if bm.GetString("fee_type") == util.NULL {
+	if bm.GetString("fee_type") == gopay.NULL {
 		bm.Set("fee_type", "CNY")
 	}
-
-	if bm.GetString("sign") == util.NULL {
-		sign := GetReleaseSign(q.ApiKey, bm.GetString("sign_type"), bm)
+	if bm.GetString("sign") == gopay.NULL {
+		sign := q.getReleaseSign(q.ApiKey, bm.GetString("sign_type"), bm)
 		bm.Set("sign", sign)
 	}
-
-	httpClient := xhttp.NewClient()
-	if q.bodySize > 0 {
-		httpClient.SetBodySize(q.bodySize)
+	req := GenerateXml(bm)
+	if q.DebugSwitch == gopay.DebugOn {
+		xlog.Debugf("QQ_Request: %s", req)
 	}
-	if tlsConfig != nil {
-		httpClient.SetTLSConfig(tlsConfig)
+	res, bs, err := q.hc.Req(xhttp.TypeXML).Post(url).SendString(req).EndBytes(ctx)
+	if err != nil {
+		return nil, err
 	}
 	if q.DebugSwitch == gopay.DebugOn {
-		xlog.Debugf("QQ_Request: %s", bm.JsonBody())
+		xlog.Debugf("QQ_Response: %s%d %s%s", xlog.Red, res.StatusCode, xlog.Reset, string(bs))
 	}
-	res, bs, err := httpClient.Type(xhttp.TypeXML).Post(url).SendString(generateXml(bm)).EndBytes(ctx)
+	if res.StatusCode != 200 {
+		return nil, fmt.Errorf("HTTP Request Error, StatusCode = %d", res.StatusCode)
+	}
+	if strings.Contains(string(bs), "HTML") {
+		return nil, errors.New(string(bs))
+	}
+	return bs, nil
+}
+
+// 向QQ发送请求 TLS
+func (q *Client) doQQPostTLS(ctx context.Context, bm gopay.BodyMap, url string) (bs []byte, err error) {
+	if bm.GetString("mch_id") == gopay.NULL {
+		bm.Set("mch_id", q.MchId)
+	}
+	if bm.GetString("fee_type") == gopay.NULL {
+		bm.Set("fee_type", "CNY")
+	}
+	if bm.GetString("sign") == gopay.NULL {
+		sign := q.getReleaseSign(q.ApiKey, bm.GetString("sign_type"), bm)
+		bm.Set("sign", sign)
+	}
+	req := GenerateXml(bm)
+	if q.DebugSwitch == gopay.DebugOn {
+		xlog.Debugf("QQ_Request: %s", req)
+	}
+	res, bs, err := q.tlsHc.Req(xhttp.TypeXML).Post(url).SendString(req).EndBytes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -274,24 +333,18 @@ func (q *Client) doQQ(ctx context.Context, bm gopay.BodyMap, url string, tlsConf
 
 // Get请求、正式
 func (q *Client) doQQGet(ctx context.Context, bm gopay.BodyMap, url, signType string) (bs []byte, err error) {
-	if bm.GetString("mch_id") == util.NULL {
+	if bm.GetString("mch_id") == gopay.NULL {
 		bm.Set("mch_id", q.MchId)
 	}
 	bm.Remove("sign")
-	sign := GetReleaseSign(q.ApiKey, signType, bm)
+	sign := q.getReleaseSign(q.ApiKey, signType, bm)
 	bm.Set("sign", sign)
-
 	if q.DebugSwitch == gopay.DebugOn {
 		xlog.Debugf("QQ_Request: %s", bm.JsonBody())
 	}
 	param := bm.EncodeURLParams()
-	url = url + "?" + param
-
-	httpClient := xhttp.NewClient()
-	if q.bodySize > 0 {
-		httpClient.SetBodySize(q.bodySize)
-	}
-	res, bs, err := httpClient.Get(url).EndBytes(ctx)
+	uri := url + "?" + param
+	res, bs, err := q.hc.Req(xhttp.TypeXML).Get(uri).EndBytes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -307,27 +360,19 @@ func (q *Client) doQQGet(ctx context.Context, bm gopay.BodyMap, url, signType st
 	return bs, nil
 }
 
-func (q *Client) doQQRed(ctx context.Context, bm gopay.BodyMap, url string, tlsConfig *tls.Config) (bs []byte, err error) {
-
-	if bm.GetString("mch_id") == util.NULL {
+func (q *Client) doQQRed(ctx context.Context, bm gopay.BodyMap, url string) (bs []byte, err error) {
+	if bm.GetString("mch_id") == gopay.NULL {
 		bm.Set("mch_id", q.MchId)
 	}
-	if bm.GetString("sign") == util.NULL {
+	if bm.GetString("sign") == gopay.NULL {
 		sign := GetReleaseSign(q.ApiKey, SignType_MD5, bm)
 		bm.Set("sign", sign)
 	}
-
-	httpClient := xhttp.NewClient()
-	if tlsConfig != nil {
-		httpClient.SetTLSConfig(tlsConfig)
-	}
-	if q.bodySize > 0 {
-		httpClient.SetBodySize(q.bodySize)
-	}
+	req := GenerateXml(bm)
 	if q.DebugSwitch == gopay.DebugOn {
-		xlog.Debugf("QQ_Request: %s", bm.JsonBody())
+		xlog.Debugf("QQ_Request: %s", req)
 	}
-	res, bs, err := httpClient.Type(xhttp.TypeXML).Post(url).SendString(generateXml(bm)).EndBytes(ctx)
+	res, bs, err := q.tlsHc.Req(xhttp.TypeXML).Post(url).SendString(req).EndBytes(ctx)
 	if err != nil {
 		return nil, err
 	}

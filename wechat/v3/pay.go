@@ -8,13 +8,12 @@ import (
 	"net/http"
 
 	"github.com/go-pay/gopay"
-	"github.com/go-pay/gopay/pkg/util"
 )
 
 // APP下单API
 // Code = 0 is success
 func (c *ClientV3) V3TransactionApp(ctx context.Context, bm gopay.BodyMap) (wxRsp *PrepayRsp, err error) {
-	if bm.GetString("mchid") == util.NULL {
+	if bm.GetString("mchid") == gopay.NULL {
 		bm.Set("mchid", c.Mchid)
 	}
 	authorization, err := c.authorization(MethodPost, v3ApiApp, bm)
@@ -41,7 +40,7 @@ func (c *ClientV3) V3TransactionApp(ctx context.Context, bm gopay.BodyMap) (wxRs
 // JSAPI/小程序下单API
 // Code = 0 is success
 func (c *ClientV3) V3TransactionJsapi(ctx context.Context, bm gopay.BodyMap) (wxRsp *PrepayRsp, err error) {
-	if bm.GetString("mchid") == util.NULL {
+	if bm.GetString("mchid") == gopay.NULL {
 		bm.Set("mchid", c.Mchid)
 	}
 	authorization, err := c.authorization(MethodPost, v3ApiJsapi, bm)
@@ -68,7 +67,7 @@ func (c *ClientV3) V3TransactionJsapi(ctx context.Context, bm gopay.BodyMap) (wx
 // Native下单API
 // Code = 0 is success
 func (c *ClientV3) V3TransactionNative(ctx context.Context, bm gopay.BodyMap) (wxRsp *NativeRsp, err error) {
-	if bm.GetString("mchid") == util.NULL {
+	if bm.GetString("mchid") == gopay.NULL {
 		bm.Set("mchid", c.Mchid)
 	}
 	authorization, err := c.authorization(MethodPost, v3ApiNative, bm)
@@ -95,7 +94,7 @@ func (c *ClientV3) V3TransactionNative(ctx context.Context, bm gopay.BodyMap) (w
 // H5下单API
 // Code = 0 is success
 func (c *ClientV3) V3TransactionH5(ctx context.Context, bm gopay.BodyMap) (wxRsp *H5Rsp, err error) {
-	if bm.GetString("mchid") == util.NULL {
+	if bm.GetString("mchid") == gopay.NULL {
 		bm.Set("mchid", c.Mchid)
 	}
 	authorization, err := c.authorization(MethodPost, v3ApiH5, bm)
@@ -119,7 +118,7 @@ func (c *ClientV3) V3TransactionH5(ctx context.Context, bm gopay.BodyMap) (wxRsp
 	return wxRsp, c.verifySyncSign(si)
 }
 
-// 查询订单API
+// 商户订单号/微信支付订单号 查询订单
 // Code = 0 is success
 func (c *ClientV3) V3TransactionQueryOrder(ctx context.Context, orderNoType OrderNoType, orderNo string) (wxRsp *QueryOrderRsp, err error) {
 	var uri string

@@ -16,9 +16,9 @@ import (
 	"strings"
 
 	"github.com/go-pay/gopay"
-	"github.com/go-pay/gopay/pkg/util"
-	"github.com/go-pay/gopay/pkg/xhttp"
-	"github.com/go-pay/gopay/pkg/xlog"
+	"github.com/go-pay/util"
+	"github.com/go-pay/xhttp"
+	"github.com/go-pay/xlog"
 	"golang.org/x/crypto/pkcs12"
 )
 
@@ -77,27 +77,16 @@ func (w *Client) addCertFileContentOrPath(certFile, keyFile, pkcs12File any) (er
 	if err = checkCertFilePathOrContent(certFile, keyFile, pkcs12File); err != nil {
 		return
 	}
-	var config *tls.Config
-	if config, err = w.addCertConfig(certFile, keyFile, pkcs12File); err != nil {
+	config, err := w.addCertConfig(certFile, keyFile, pkcs12File)
+	if err != nil {
 		return
 	}
-	w.mu.Lock()
-	w.Certificate = &config.Certificates[0]
-	w.mu.Unlock()
+	w.tlsHc.SetTLSConfig(config)
 	return
 }
 
 func (w *Client) addCertConfig(certFile, keyFile, pkcs12File any) (tlsConfig *tls.Config, err error) {
 	if certFile == nil && keyFile == nil && pkcs12File == nil {
-		w.mu.RLock()
-		defer w.mu.RUnlock()
-		if w.Certificate != nil {
-			tlsConfig = &tls.Config{
-				Certificates:       []tls.Certificate{*w.Certificate},
-				InsecureSkipVerify: true,
-			}
-			return tlsConfig, nil
-		}
 		return nil, errors.New("cert parse failed or nil")
 	}
 
@@ -159,7 +148,7 @@ func checkCertFilePathOrContent(certFile, keyFile, pkcs12File any) error {
 		for varName, v := range files {
 			switch v := v.(type) {
 			case string:
-				if v == util.NULL {
+				if v == gopay.NULL {
 					return fmt.Errorf("%s is empty", varName)
 				}
 			case []byte:
@@ -174,7 +163,7 @@ func checkCertFilePathOrContent(certFile, keyFile, pkcs12File any) error {
 	} else if pkcs12File != nil {
 		switch pkcs12File := pkcs12File.(type) {
 		case string:
-			if pkcs12File == util.NULL {
+			if pkcs12File == gopay.NULL {
 				return errors.New("pkcs12File is empty")
 			}
 		case []byte:
@@ -204,16 +193,21 @@ func GetReleaseSign(apiKey string, signType string, bm gopay.BodyMap) (sign stri
 
 // 获取微信支付正式环境Sign值
 func (w *Client) getReleaseSign(apiKey string, signType string, bm gopay.BodyMap) (sign string) {
-	var h hash.Hash
-	if signType == SignType_HMAC_SHA256 {
-		h = hmac.New(sha256.New, []byte(apiKey))
-	} else {
-		h = md5.New()
-	}
 	signParams := bm.EncodeWeChatSignParams(apiKey)
 	if w.DebugSwitch == gopay.DebugOn {
 		xlog.Debugf("Wechat_Request_SignStr: %s", signParams)
 	}
+	var h hash.Hash
+	if signType == SignType_HMAC_SHA256 {
+		h = w.sha256Hash
+	} else {
+		h = w.md5Hash
+	}
+	w.mu.Lock()
+	defer func() {
+		h.Reset()
+		w.mu.Unlock()
+	}()
 	h.Write([]byte(signParams))
 	return strings.ToUpper(hex.EncodeToString(h.Sum(nil)))
 }
@@ -272,12 +266,12 @@ func getSanBoxSignKey(ctx context.Context, mchId, nonceStr, sign string) (key st
 	reqs.Set("sign", sign)
 
 	keyResponse := new(getSignKeyResponse)
-	_, err = xhttp.NewClient().Type(xhttp.TypeXML).Post(sandboxGetSignKey).SendString(GenerateXml(reqs)).EndStruct(ctx, keyResponse)
+	_, err = xhttp.NewClient().Req(xhttp.TypeXML).Post(sandboxGetSignKey).SendString(GenerateXml(reqs)).EndStruct(ctx, keyResponse)
 	if err != nil {
-		return util.NULL, err
+		return gopay.NULL, err
 	}
 	if keyResponse.ReturnCode == "FAIL" {
-		return util.NULL, errors.New(keyResponse.ReturnMsg)
+		return gopay.NULL, errors.New(keyResponse.ReturnMsg)
 	}
 	return keyResponse.SandboxSignkey, nil
 }
@@ -286,7 +280,7 @@ func getSanBoxSignKey(ctx context.Context, mchId, nonceStr, sign string) (key st
 func GenerateXml(bm gopay.BodyMap) (reqXml string) {
 	bs, err := xml.Marshal(bm)
 	if err != nil {
-		return util.NULL
+		return gopay.NULL
 	}
 	return string(bs)
 }

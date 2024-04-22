@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/go-pay/gopay"
-	"github.com/go-pay/gopay/pkg/xhttp"
-	"github.com/go-pay/gopay/pkg/xlog"
+	"github.com/go-pay/xhttp"
+	"github.com/go-pay/xlog"
 )
 
 // alipay.trade.customs.declare(统一收单报关接口)
@@ -69,7 +69,7 @@ func (a *Client) doAliPayCustoms(ctx context.Context, bm gopay.BodyMap, service 
 	bm.Remove("sign_type")
 	bm.Remove("sign")
 
-	sign, err := a.getRsaSign(bm, RSA, a.privateKey)
+	sign, err := a.getRsaSign(bm, RSA)
 	if err != nil {
 		return nil, fmt.Errorf("GetRsaSign Error: %v", err)
 	}
@@ -79,8 +79,7 @@ func (a *Client) doAliPayCustoms(ctx context.Context, bm gopay.BodyMap, service 
 		xlog.Debugf("Alipay_Request: %s", bm.JsonBody())
 	}
 	// request
-	httpClient := xhttp.NewClient()
-	res, bs, err := httpClient.Type(xhttp.TypeForm).Post("https://mapi.alipay.com/gateway.do").SendString(bm.EncodeURLParams()).EndBytes(ctx)
+	res, bs, err := a.hc.Req(xhttp.TypeFormData).Post("https://mapi.alipay.com/gateway.do").SendString(bm.EncodeURLParams()).EndBytes(ctx)
 	if err != nil {
 		return nil, err
 	}

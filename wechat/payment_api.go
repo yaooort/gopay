@@ -19,10 +19,9 @@ import (
 	"net/http"
 	"strings"
 
+	xaes "github.com/go-pay/crypto/aes"
 	"github.com/go-pay/gopay"
-	xaes "github.com/go-pay/gopay/pkg/aes"
-	"github.com/go-pay/gopay/pkg/util"
-	"github.com/go-pay/gopay/pkg/xhttp"
+	"github.com/go-pay/xhttp"
 )
 
 // ParseNotifyToBodyMap 解析微信支付异步通知的结果到BodyMap（推荐）
@@ -75,7 +74,7 @@ func ParseRefundNotify(req *http.Request) (notifyReq *RefundNotifyRequest, err e
 // 返回参数err：错误信息
 // 文档：https://pay.weixin.qq.com/wiki/doc/api/jsapi.php?chapter=9_16&index=10
 func DecryptRefundNotifyReqInfo(reqInfo, apiKey string) (refundNotify *RefundNotify, err error) {
-	if reqInfo == util.NULL || apiKey == util.NULL {
+	if reqInfo == gopay.NULL || apiKey == gopay.NULL {
 		return nil, errors.New("reqInfo or apiKey is null")
 	}
 	var (
@@ -162,7 +161,7 @@ func GetOpenIdByAuthCode(ctx context.Context, appId, mchId, apiKey, authCode, no
 	bm.Set("sign", GetReleaseSign(apiKey, SignType_MD5, bm))
 
 	openIdRsp = new(OpenIdByAuthCodeRsp)
-	_, err = xhttp.NewClient().Type(xhttp.TypeXML).Post(url).SendString(GenerateXml(bm)).EndStruct(ctx, openIdRsp)
+	_, err = xhttp.NewClient().Req(xhttp.TypeXML).Post(url).SendString(GenerateXml(bm)).EndStruct(ctx, openIdRsp)
 	if err != nil {
 		return nil, err
 	}

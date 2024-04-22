@@ -1,18 +1,19 @@
 package alipay
 
 import (
-	"context"
 	"crypto/rsa"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/go-pay/crypto/aes"
+	"github.com/go-pay/crypto/xpem"
+	"github.com/go-pay/crypto/xrsa"
 	"github.com/go-pay/gopay"
-	"github.com/go-pay/gopay/pkg/util"
-	"github.com/go-pay/gopay/pkg/xhttp"
-	"github.com/go-pay/gopay/pkg/xlog"
-	"github.com/go-pay/gopay/pkg/xpem"
-	"github.com/go-pay/gopay/pkg/xrsa"
+	"github.com/go-pay/xhttp"
+	"github.com/go-pay/xlog"
+	"github.com/go-pay/xtime"
 )
 
 type Client struct {
@@ -26,21 +27,23 @@ type Client struct {
 	SignType           string
 	AppAuthToken       string
 	IsProd             bool
-	bodySize           int // http response body size(MB), default is 10MB
+	aesKey             string // biz_content 加密的 AES KEY
+	ivKey              []byte
 	privateKey         *rsa.PrivateKey
 	aliPayPublicKey    *rsa.PublicKey // 支付宝证书公钥内容 alipayPublicCert.crt
 	autoSign           bool
 	DebugSwitch        gopay.DebugSwitch
 	location           *time.Location
+	hc                 *xhttp.Client
 }
 
 // 初始化支付宝客户端
-// 注意：如果使用支付宝公钥证书验签，请设置 支付宝根证书SN（client.SetAlipayRootCertSN()）、应用公钥证书SN（client.SetAppCertSN()）
+// 注意：如果使用支付宝公钥证书验签，请使用 client.SetCertSnByContent() 或 client.SetCertSnByPath() 设置 应用公钥证书、支付宝公钥证书、支付宝根证书
 // appid：应用ID
 // privateKey：应用私钥，支持PKCS1和PKCS8
 // isProd：是否是正式环境，沙箱环境请选择新版沙箱应用。
 func NewClient(appid, privateKey string, isProd bool) (client *Client, err error) {
-	if appid == util.NULL || privateKey == util.NULL {
+	if appid == gopay.NULL || privateKey == gopay.NULL {
 		return nil, gopay.MissAlipayInitParamErr
 	}
 	key := xrsa.FormatAlipayPrivateKey(privateKey)
@@ -55,6 +58,7 @@ func NewClient(appid, privateKey string, isProd bool) (client *Client, err error
 		IsProd:      isProd,
 		privateKey:  priKey,
 		DebugSwitch: gopay.DebugOff,
+		hc:          xhttp.NewClient(),
 	}
 	return client, nil
 }
@@ -76,22 +80,15 @@ func (a *Client) AutoVerifySign(alipayPublicKeyContent []byte) {
 // SetBodySize 设置http response body size(MB)
 func (a *Client) SetBodySize(sizeMB int) {
 	if sizeMB > 0 {
-		a.bodySize = sizeMB
+		a.hc.SetBodySize(sizeMB)
 	}
 }
 
-// Deprecated
-// 推荐使用 PostAliPayAPISelfV2()
-// 示例：请参考 client_test.go 的 TestClient_PostAliPayAPISelf() 方法
-func (a *Client) PostAliPayAPISelf(ctx context.Context, bm gopay.BodyMap, method string, aliRsp any) (err error) {
-	var bs []byte
-	if bs, err = a.doAliPay(ctx, bm, method); err != nil {
-		return err
-	}
-	if err = json.Unmarshal(bs, aliRsp); err != nil {
-		return err
-	}
-	return nil
+// SetAESKey 设置 biz_content 的AES加密key，设置此参数默认开启 biz_content 参数加密
+// 注意：目前不可用，设置后会报错
+func (a *Client) SetAESKey(aesKey string) {
+	a.aesKey = aesKey
+	a.ivKey = []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
 }
 
 // Deprecated
@@ -123,7 +120,7 @@ func (a *Client) RequestParam(bm gopay.BodyMap, method string) (string, error) {
 
 	// check sign
 	if bm.GetString("sign") == "" {
-		sign, err = a.getRsaSign(bm, bm.GetString("sign_type"), a.privateKey)
+		sign, err = a.getRsaSign(bm, bm.GetString("sign_type"))
 		if err != nil {
 			return "", fmt.Errorf("GetRsaSign Error: %w", err)
 		}
@@ -136,229 +133,6 @@ func (a *Client) RequestParam(bm gopay.BodyMap, method string) (string, error) {
 	return bm.EncodeURLParams(), nil
 }
 
-// PostAliPayAPISelfV2 支付宝接口自行实现方法
-// 注意：biz_content 需要自行通过bm.SetBodyMap()设置，不设置则没有此参数
-// 示例：请参考 client_test.go 的 TestClient_PostAliPayAPISelfV2() 方法
-func (a *Client) PostAliPayAPISelfV2(ctx context.Context, bm gopay.BodyMap, method string, aliRsp any) (err error) {
-	var (
-		bs, bodyBs []byte
-	)
-	// check if there is biz_content
-	bz := bm.GetInterface("biz_content")
-	if bzBody, ok := bz.(gopay.BodyMap); ok {
-		if bodyBs, err = json.Marshal(bzBody); err != nil {
-			return fmt.Errorf("json.Marshal(%v)：%w", bzBody, err)
-		}
-		bm.Set("biz_content", string(bodyBs))
-	}
-
-	if bs, err = a.doAliPaySelf(ctx, bm, method); err != nil {
-		return err
-	}
-	if err = json.Unmarshal(bs, aliRsp); err != nil {
-		return err
-	}
-	return nil
-}
-
-// 向支付宝发送自定义请求
-func (a *Client) doAliPaySelf(ctx context.Context, bm gopay.BodyMap, method string) (bs []byte, err error) {
-	var (
-		url, sign string
-	)
-	bm.Set("method", method)
-	// check public parameter
-	a.checkPublicParam(bm)
-	// check sign
-	if bm.GetString("sign") == "" {
-		sign, err = a.getRsaSign(bm, bm.GetString("sign_type"), a.privateKey)
-		if err != nil {
-			return nil, fmt.Errorf("GetRsaSign Error: %w", err)
-		}
-		bm.Set("sign", sign)
-	}
-	if a.DebugSwitch == gopay.DebugOn {
-		xlog.Debugf("Alipay_Request: %s", bm.JsonBody())
-	}
-
-	httpClient := xhttp.NewClient()
-	if a.bodySize > 0 {
-		httpClient.SetBodySize(a.bodySize)
-	}
-	if a.IsProd {
-		url = baseUrlUtf8
-	} else {
-		url = sandboxBaseUrlUtf8
-	}
-	res, bs, err := httpClient.Type(xhttp.TypeForm).Post(url).SendString(bm.EncodeURLParams()).EndBytes(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if a.DebugSwitch == gopay.DebugOn {
-		xlog.Debugf("Alipay_Response: %s%d %s%s", xlog.Red, res.StatusCode, xlog.Reset, string(bs))
-	}
-	if res.StatusCode != 200 {
-		return nil, fmt.Errorf("HTTP Request Error, StatusCode = %d", res.StatusCode)
-	}
-	return bs, nil
-}
-
-// 向支付宝发送请求
-func (a *Client) doAliPay(ctx context.Context, bm gopay.BodyMap, method string, authToken ...string) (bs []byte, err error) {
-	var (
-		bizContent, url string
-		bodyBs          []byte
-	)
-	if bm != nil {
-		_, has := appAuthTokenInBizContent[method]
-		if has {
-			if bodyBs, err = json.Marshal(bm); err != nil {
-				return nil, fmt.Errorf("json.Marshal：%w", err)
-			}
-			bizContent = string(bodyBs)
-			bm.Remove("app_auth_token")
-		} else {
-			aat := bm.GetString("app_auth_token")
-			bm.Remove("app_auth_token")
-			if bodyBs, err = json.Marshal(bm); err != nil {
-				return nil, fmt.Errorf("json.Marshal：%w", err)
-			}
-			bizContent = string(bodyBs)
-			bm.Set("app_auth_token", aat)
-		}
-	}
-	// 处理公共参数
-	param, err := a.pubParamsHandle(bm, method, bizContent, authToken...)
-	if err != nil {
-		return nil, err
-	}
-	switch method {
-	case "alipay.trade.app.pay", "alipay.fund.auth.order.app.freeze":
-		return []byte(param), nil
-	case "alipay.trade.wap.pay", "alipay.trade.page.pay", "alipay.user.certify.open.certify":
-		if !a.IsProd {
-			return []byte(sandboxBaseUrl + "?" + param), nil
-		}
-		return []byte(baseUrl + "?" + param), nil
-	default:
-		httpClient := xhttp.NewClient()
-		if a.bodySize > 0 {
-			httpClient.SetBodySize(a.bodySize)
-		}
-		url = baseUrlUtf8
-		if !a.IsProd {
-			url = sandboxBaseUrlUtf8
-		}
-		res, bs, err := httpClient.Type(xhttp.TypeForm).Post(url).SendString(param).EndBytes(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if a.DebugSwitch == gopay.DebugOn {
-			xlog.Debugf("Alipay_Response: %s%d %s%s", xlog.Red, res.StatusCode, xlog.Reset, string(bs))
-		}
-		if res.StatusCode != 200 {
-			return nil, fmt.Errorf("HTTP Request Error, StatusCode = %d", res.StatusCode)
-		}
-		return bs, nil
-	}
-}
-
-// 向支付宝发送请求
-func (a *Client) DoAliPay(ctx context.Context, bm gopay.BodyMap, method string, authToken ...string) (bs []byte, err error) {
-	var (
-		bizContent, url string
-		bodyBs          []byte
-	)
-	if bm != nil {
-		_, has := appAuthTokenInBizContent[method]
-		if has {
-			if bodyBs, err = json.Marshal(bm); err != nil {
-				return nil, fmt.Errorf("json.Marshal：%w", err)
-			}
-			bizContent = string(bodyBs)
-			bm.Remove("app_auth_token")
-		} else {
-			aat := bm.GetString("app_auth_token")
-			bm.Remove("app_auth_token")
-			if bodyBs, err = json.Marshal(bm); err != nil {
-				return nil, fmt.Errorf("json.Marshal：%w", err)
-			}
-			bizContent = string(bodyBs)
-			bm.Set("app_auth_token", aat)
-		}
-	}
-	// 处理公共参数
-	param, err := a.pubParamsHandle(bm, method, bizContent, authToken...)
-	if err != nil {
-		return nil, err
-	}
-	switch method {
-	case "alipay.trade.app.pay", "alipay.fund.auth.order.app.freeze":
-		return []byte(param), nil
-	case "alipay.trade.wap.pay", "alipay.trade.page.pay", "alipay.user.certify.open.certify":
-		if !a.IsProd {
-			return []byte(sandboxBaseUrl + "?" + param), nil
-		}
-		return []byte(baseUrl + "?" + param), nil
-	default:
-		httpClient := xhttp.NewClient()
-		if a.bodySize > 0 {
-			httpClient.SetBodySize(a.bodySize)
-		}
-		url = baseUrlUtf8
-		if !a.IsProd {
-			url = sandboxBaseUrlUtf8
-		}
-		res, bs, err := httpClient.Type(xhttp.TypeForm).Post(url).SendString(param).EndBytes(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if a.DebugSwitch == gopay.DebugOn {
-			xlog.Debugf("Alipay_Response: %s%d %s%s", xlog.Red, res.StatusCode, xlog.Reset, string(bs))
-		}
-		if res.StatusCode != 200 {
-			return nil, fmt.Errorf("HTTP Request Error, StatusCode = %d", res.StatusCode)
-		}
-		return bs, nil
-	}
-}
-
-// 保持和官方 SDK 命名方式一致
-func (a *Client) PageExecute(ctx context.Context, bm gopay.BodyMap, method string, authToken ...string) (url string, err error) {
-	var (
-		bizContent string
-		bodyBs     []byte
-	)
-	if bm != nil {
-		_, has := appAuthTokenInBizContent[method]
-		if has {
-			if bodyBs, err = json.Marshal(bm); err != nil {
-				return "", fmt.Errorf("json.Marshal：%w", err)
-			}
-			bizContent = string(bodyBs)
-			bm.Remove("app_auth_token")
-		} else {
-			aat := bm.GetString("app_auth_token")
-			bm.Remove("app_auth_token")
-			if bodyBs, err = json.Marshal(bm); err != nil {
-				return "", fmt.Errorf("json.Marshal：%w", err)
-			}
-			bizContent = string(bodyBs)
-			bm.Set("app_auth_token", aat)
-		}
-	}
-	// 处理公共参数
-	param, err := a.pubParamsHandle(bm, method, bizContent, authToken...)
-	if err != nil {
-		return "", err
-	}
-
-	if !a.IsProd {
-		return sandboxBaseUrl + "?" + param, nil
-	}
-	return baseUrl + "?" + param, nil
-}
-
 // 公共参数处理
 func (a *Client) pubParamsHandle(bm gopay.BodyMap, method, bizContent string, authToken ...string) (param string, err error) {
 	pubBody := make(gopay.BodyMap)
@@ -368,51 +142,64 @@ func (a *Client) pubParamsHandle(bm gopay.BodyMap, method, bizContent string, au
 		Set("charset", a.Charset).
 		Set("sign_type", a.SignType).
 		Set("version", "1.0").
-		Set("timestamp", time.Now().Format(util.TimeLayout))
+		Set("timestamp", time.Now().Format(xtime.TimeLayout))
 
 	// version
-	if version := bm.GetString("version"); version != util.NULL {
+	if version := bm.GetString("version"); version != gopay.NULL {
 		pubBody.Set("version", version)
 	}
-	if a.AppCertSN != util.NULL {
+	if a.AppCertSN != gopay.NULL {
 		pubBody.Set("app_cert_sn", a.AppCertSN)
 	}
-	if a.AliPayRootCertSN != util.NULL {
+	if a.AliPayRootCertSN != gopay.NULL {
 		pubBody.Set("alipay_root_cert_sn", a.AliPayRootCertSN)
 	}
 	// return_url
-	if a.ReturnUrl != util.NULL {
+	if a.ReturnUrl != gopay.NULL {
 		pubBody.Set("return_url", a.ReturnUrl)
 	}
-	if returnUrl := bm.GetString("return_url"); returnUrl != util.NULL {
+	if returnUrl := bm.GetString("return_url"); returnUrl != gopay.NULL {
 		pubBody.Set("return_url", returnUrl)
 	}
 	if a.location != nil {
-		pubBody.Set("timestamp", time.Now().In(a.location).Format(util.TimeLayout))
+		pubBody.Set("timestamp", time.Now().In(a.location).Format(xtime.TimeLayout))
 	}
 	// notify_url
-	if a.NotifyUrl != util.NULL {
+	if a.NotifyUrl != gopay.NULL {
 		pubBody.Set("notify_url", a.NotifyUrl)
 	}
-	if notifyUrl := bm.GetString("notify_url"); notifyUrl != util.NULL {
+	if notifyUrl := bm.GetString("notify_url"); notifyUrl != gopay.NULL {
 		pubBody.Set("notify_url", notifyUrl)
 	}
 	// default use app_auth_token
-	if a.AppAuthToken != util.NULL {
+	if a.AppAuthToken != gopay.NULL {
 		pubBody.Set("app_auth_token", a.AppAuthToken)
 	}
 	// if user set app_auth_token in body_map, use this
-	if aat := bm.GetString("app_auth_token"); aat != util.NULL {
+	if aat := bm.GetString("app_auth_token"); aat != gopay.NULL {
 		pubBody.Set("app_auth_token", aat)
 	}
 	if len(authToken) > 0 {
 		pubBody.Set("auth_token", authToken[0])
 	}
-	if bizContent != util.NULL {
-		pubBody.Set("biz_content", bizContent)
+	if bizContent != gopay.NULL {
+		if a.aesKey == gopay.NULL {
+			pubBody.Set("biz_content", bizContent)
+		} else {
+			// AES Encrypt biz_content
+			encryptBizContent, err := a.encryptBizContent(bizContent)
+			if err != nil {
+				return "", fmt.Errorf("EncryptBizContent Error: %w", err)
+			}
+			if a.DebugSwitch == gopay.DebugOn {
+				xlog.Debugf("Alipay_Origin_BizContent: %s", bizContent)
+				xlog.Debugf("Alipay_Encrypt_BizContent: %s", encryptBizContent)
+			}
+			pubBody.Set("biz_content", encryptBizContent)
+		}
 	}
 	// sign
-	sign, err := a.getRsaSign(pubBody, pubBody.GetString("sign_type"), a.privateKey)
+	sign, err := a.getRsaSign(pubBody, pubBody.GetString("sign_type"))
 	if err != nil {
 		return "", fmt.Errorf("GetRsaSign Error: %w", err)
 	}
@@ -430,106 +217,35 @@ func (a *Client) checkPublicParam(bm gopay.BodyMap) {
 		Set("charset", a.Charset).
 		Set("sign_type", a.SignType).
 		Set("version", "1.0").
-		Set("timestamp", time.Now().Format(util.TimeLayout))
+		Set("timestamp", time.Now().Format(xtime.TimeLayout))
 
-	if bm.GetString("app_id") == "" && a.AppId != util.NULL {
+	if bm.GetString("app_id") == "" && a.AppId != gopay.NULL {
 		bm.Set("app_id", a.AppId)
 	}
-	if bm.GetString("app_cert_sn") == "" && a.AppCertSN != util.NULL {
+	if bm.GetString("app_cert_sn") == "" && a.AppCertSN != gopay.NULL {
 		bm.Set("app_cert_sn", a.AppCertSN)
 	}
-	if bm.GetString("alipay_root_cert_sn") == "" && a.AliPayRootCertSN != util.NULL {
+	if bm.GetString("alipay_root_cert_sn") == "" && a.AliPayRootCertSN != gopay.NULL {
 		bm.Set("alipay_root_cert_sn", a.AliPayRootCertSN)
 	}
-	if bm.GetString("return_url") == "" && a.ReturnUrl != util.NULL {
+	if bm.GetString("return_url") == "" && a.ReturnUrl != gopay.NULL {
 		bm.Set("return_url", a.ReturnUrl)
 	}
 	if a.location != nil {
-		bm.Set("timestamp", time.Now().In(a.location).Format(util.TimeLayout))
+		bm.Set("timestamp", time.Now().In(a.location).Format(xtime.TimeLayout))
 	}
-	if bm.GetString("notify_url") == "" && a.NotifyUrl != util.NULL {
+	if bm.GetString("notify_url") == "" && a.NotifyUrl != gopay.NULL {
 		bm.Set("notify_url", a.NotifyUrl)
 	}
-	if bm.GetString("app_auth_token") == "" && a.AppAuthToken != util.NULL {
+	if bm.GetString("app_auth_token") == "" && a.AppAuthToken != gopay.NULL {
 		bm.Set("app_auth_token", a.AppAuthToken)
 	}
 }
 
-// 文件上传
-func (a *Client) FileRequest(ctx context.Context, bm gopay.BodyMap, file *util.File, method string) (bs []byte, err error) {
-	var (
-		bodyStr string
-		bodyBs  []byte
-		aat     string
-	)
-	if bm != nil {
-		aat = bm.GetString("app_auth_token")
-		bm.Remove("app_auth_token")
-		if bodyBs, err = json.Marshal(bm); err != nil {
-			return nil, fmt.Errorf("json.Marshal：%w", err)
-		}
-		bodyStr = string(bodyBs)
-	}
-	pubBody := make(gopay.BodyMap)
-	pubBody.Set("app_id", a.AppId).
-		Set("method", method).
-		Set("format", "JSON").
-		Set("charset", a.Charset).
-		Set("sign_type", a.SignType).
-		Set("version", "1.0").
-		Set("scene", "SYNC_ORDER").
-		Set("timestamp", time.Now().Format(util.TimeLayout))
-
-	if a.AppCertSN != util.NULL {
-		pubBody.Set("app_cert_sn", a.AppCertSN)
-	}
-	if a.AliPayRootCertSN != util.NULL {
-		pubBody.Set("alipay_root_cert_sn", a.AliPayRootCertSN)
-	}
-	if a.ReturnUrl != util.NULL {
-		pubBody.Set("return_url", a.ReturnUrl)
-	}
-	if a.location != nil {
-		pubBody.Set("timestamp", time.Now().In(a.location).Format(util.TimeLayout))
-	}
-	if a.NotifyUrl != util.NULL { //如果返回url为空，传过来的返回url不为空
-		//fmt.Println("url不为空？", a.NotifyUrl)
-		pubBody.Set("notify_url", a.NotifyUrl)
-	}
-	//fmt.Println("notify,", pubBody.JsonBody())
-	if a.AppAuthToken != util.NULL {
-		pubBody.Set("app_auth_token", a.AppAuthToken)
-	}
-	if aat != util.NULL {
-		pubBody.Set("app_auth_token", aat)
-	}
-	if bodyStr != util.NULL {
-		pubBody.Set("biz_content", bodyStr)
-	}
-	sign, err := a.getRsaSign(pubBody, pubBody.GetString("sign_type"), a.privateKey)
+func (a *Client) encryptBizContent(originData string) (string, error) {
+	encryptData, err := aes.CBCEncrypt([]byte(originData), []byte(a.aesKey), a.ivKey)
 	if err != nil {
-		return nil, fmt.Errorf("GetRsaSign Error: %w", err)
+		return "", err
 	}
-	//pubBody.Set("file_content", file.Content)
-	pubBody.Set("sign", sign)
-	if a.DebugSwitch == gopay.DebugOn {
-		xlog.Debugf("Alipay_Request: %s", pubBody.JsonBody())
-	}
-	param := pubBody.EncodeURLParams()
-	url := baseUrlUtf8 + "&" + param
-	bm.Reset()
-	bm.SetFormFile("file_content", file)
-	httpClient := xhttp.NewClient()
-	res, bs, err := httpClient.Type(xhttp.TypeMultipartFormData).Post(url).
-		SendMultipartBodyMap(bm).EndBytes(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if a.DebugSwitch == gopay.DebugOn {
-		xlog.Debugf("Alipay_Response: %s%d %s%s", xlog.Red, res.StatusCode, xlog.Reset, string(bs))
-	}
-	if res.StatusCode != 200 {
-		return nil, fmt.Errorf("HTTP Request Error, StatusCode = %d", res.StatusCode)
-	}
-	return bs, nil
+	return base64.StdEncoding.EncodeToString(encryptData), nil
 }

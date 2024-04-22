@@ -2,15 +2,13 @@ package wechat
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/xml"
 	"errors"
 	"fmt"
 
 	"github.com/go-pay/gopay"
-	"github.com/go-pay/gopay/pkg/util"
-	"github.com/go-pay/gopay/pkg/xhttp"
-	"github.com/go-pay/gopay/pkg/xlog"
+	"github.com/go-pay/xhttp"
+	"github.com/go-pay/xlog"
 )
 
 // 企业付款（企业向微信用户个人付款）
@@ -24,16 +22,11 @@ func (w *Client) Transfer(ctx context.Context, bm gopay.BodyMap) (wxRsp *Transfe
 	bm.Set("mch_appid", w.AppId)
 	bm.Set("mchid", w.MchId)
 	var (
-		tlsConfig *tls.Config
-		url       = baseUrlCh + transfers
+		url = baseUrlCh + transfers
 	)
-	if tlsConfig, err = w.addCertConfig(nil, nil, nil); err != nil {
-		return nil, err
-	}
 	bm.Set("sign", w.getReleaseSign(w.ApiKey, SignType_MD5, bm))
 
-	httpClient := xhttp.NewClient().SetTLSConfig(tlsConfig).Type(xhttp.TypeXML)
-	if w.BaseURL != util.NULL {
+	if w.BaseURL != gopay.NULL {
 		w.mu.RLock()
 		url = w.BaseURL + transfers
 		w.mu.RUnlock()
@@ -42,7 +35,7 @@ func (w *Client) Transfer(ctx context.Context, bm gopay.BodyMap) (wxRsp *Transfe
 	if w.DebugSwitch == gopay.DebugOn {
 		xlog.Debugf("Wechat_Request: %s", req)
 	}
-	res, bs, err := httpClient.Post(url).SendString(req).EndBytes(ctx)
+	res, bs, err := w.tlsHc.Req(xhttp.TypeXML).Post(url).SendString(req).EndBytes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -70,16 +63,11 @@ func (w *Client) GetTransferInfo(ctx context.Context, bm gopay.BodyMap) (wxRsp *
 	bm.Set("appid", w.AppId)
 	bm.Set("mch_id", w.MchId)
 	var (
-		tlsConfig *tls.Config
-		url       = baseUrlCh + getTransferInfo
+		url = baseUrlCh + getTransferInfo
 	)
-	if tlsConfig, err = w.addCertConfig(nil, nil, nil); err != nil {
-		return nil, err
-	}
 	bm.Set("sign", w.getReleaseSign(w.ApiKey, SignType_MD5, bm))
 
-	httpClient := xhttp.NewClient().SetTLSConfig(tlsConfig).Type(xhttp.TypeXML)
-	if w.BaseURL != util.NULL {
+	if w.BaseURL != gopay.NULL {
 		w.mu.RLock()
 		url = w.BaseURL + getTransferInfo
 		w.mu.RUnlock()
@@ -88,7 +76,7 @@ func (w *Client) GetTransferInfo(ctx context.Context, bm gopay.BodyMap) (wxRsp *
 	if w.DebugSwitch == gopay.DebugOn {
 		xlog.Debugf("Wechat_Request: %s", req)
 	}
-	res, bs, err := httpClient.Post(url).SendString(req).EndBytes(ctx)
+	res, bs, err := w.tlsHc.Req(xhttp.TypeXML).Post(url).SendString(req).EndBytes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -118,16 +106,11 @@ func (w *Client) PayBank(ctx context.Context, bm gopay.BodyMap) (wxRsp *PayBankR
 	}
 	bm.Set("mch_id", w.MchId)
 	var (
-		tlsConfig *tls.Config
-		url       = baseUrlCh + payBank
+		url = baseUrlCh + payBank
 	)
-	if tlsConfig, err = w.addCertConfig(nil, nil, nil); err != nil {
-		return nil, err
-	}
 	bm.Set("sign", w.getReleaseSign(w.ApiKey, SignType_MD5, bm))
 
-	httpClient := xhttp.NewClient().SetTLSConfig(tlsConfig).Type(xhttp.TypeXML)
-	if w.BaseURL != util.NULL {
+	if w.BaseURL != gopay.NULL {
 		w.mu.RLock()
 		url = w.BaseURL + payBank
 		w.mu.RUnlock()
@@ -136,7 +119,7 @@ func (w *Client) PayBank(ctx context.Context, bm gopay.BodyMap) (wxRsp *PayBankR
 	if w.DebugSwitch == gopay.DebugOn {
 		xlog.Debugf("Wechat_Request: %s", req)
 	}
-	res, bs, err := httpClient.Post(url).SendString(req).EndBytes(ctx)
+	res, bs, err := w.tlsHc.Req(xhttp.TypeXML).Post(url).SendString(req).EndBytes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -162,16 +145,11 @@ func (w *Client) QueryBank(ctx context.Context, bm gopay.BodyMap) (wxRsp *QueryB
 	}
 	bm.Set("mch_id", w.MchId)
 	var (
-		tlsConfig *tls.Config
-		url       = baseUrlCh + queryBank
+		url = baseUrlCh + queryBank
 	)
-	if tlsConfig, err = w.addCertConfig(nil, nil, nil); err != nil {
-		return nil, err
-	}
 	bm.Set("sign", w.getReleaseSign(w.ApiKey, SignType_MD5, bm))
 
-	httpClient := xhttp.NewClient().SetTLSConfig(tlsConfig).Type(xhttp.TypeXML)
-	if w.BaseURL != util.NULL {
+	if w.BaseURL != gopay.NULL {
 		w.mu.RLock()
 		url = w.BaseURL + queryBank
 		w.mu.RUnlock()
@@ -180,7 +158,7 @@ func (w *Client) QueryBank(ctx context.Context, bm gopay.BodyMap) (wxRsp *QueryB
 	if w.DebugSwitch == gopay.DebugOn {
 		xlog.Debugf("Wechat_Request: %s", req)
 	}
-	res, bs, err := httpClient.Post(url).SendString(req).EndBytes(ctx)
+	res, bs, err := w.tlsHc.Req(xhttp.TypeXML).Post(url).SendString(req).EndBytes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -206,20 +184,15 @@ func (w *Client) GetRSAPublicKey(ctx context.Context, bm gopay.BodyMap) (wxRsp *
 	}
 	bm.Set("mch_id", w.MchId)
 	var (
-		tlsConfig *tls.Config
-		url       = getPublicKey
+		url = getPublicKey
 	)
-	if tlsConfig, err = w.addCertConfig(nil, nil, nil); err != nil {
-		return nil, err
-	}
 	bm.Set("sign", w.getReleaseSign(w.ApiKey, bm.GetString("sign_type"), bm))
 
-	httpClient := xhttp.NewClient().SetTLSConfig(tlsConfig).Type(xhttp.TypeXML)
 	req := GenerateXml(bm)
 	if w.DebugSwitch == gopay.DebugOn {
 		xlog.Debugf("Wechat_Request: %s", req)
 	}
-	res, bs, err := httpClient.Post(url).SendString(req).EndBytes(ctx)
+	res, bs, err := w.tlsHc.Req(xhttp.TypeXML).Post(url).SendString(req).EndBytes(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -265,11 +238,7 @@ func (w *Client) profitSharing(ctx context.Context, bm gopay.BodyMap, uri string
 
 	// 设置签名类型，官方文档此接口只支持 HMAC_SHA256
 	bm.Set("sign_type", SignType_HMAC_SHA256)
-	tlsConfig, err := w.addCertConfig(nil, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	bs, err := w.doProdPost(ctx, bm, uri, tlsConfig)
+	bs, err := w.doProdPostTLS(ctx, bm, uri)
 	if err != nil {
 		return nil, err
 	}
@@ -291,11 +260,11 @@ func (w *Client) ProfitSharingQuery(ctx context.Context, bm gopay.BodyMap) (wxRs
 	// 设置签名类型，官方文档此接口只支持 HMAC_SHA256
 	bm.Set("sign_type", SignType_HMAC_SHA256)
 	bm.Set("mch_id", w.MchId)
-	if bm.GetString("sign") == util.NULL {
+	if bm.GetString("sign") == gopay.NULL {
 		sign := w.getReleaseSign(w.ApiKey, bm.GetString("sign_type"), bm)
 		bm.Set("sign", sign)
 	}
-	bs, err := w.doProdPostPure(ctx, bm, profitSharingQuery, nil)
+	bs, err := w.doProdPostPure(ctx, bm, profitSharingQuery)
 	if err != nil {
 		return nil, err
 	}
@@ -316,7 +285,7 @@ func (w *Client) ProfitSharingAddReceiver(ctx context.Context, bm gopay.BodyMap)
 	}
 	// 设置签名类型，官方文档此接口只支持 HMAC_SHA256
 	bm.Set("sign_type", SignType_HMAC_SHA256)
-	bs, err := w.doProdPost(ctx, bm, profitSharingAddReceiver, nil)
+	bs, err := w.doProdPost(ctx, bm, profitSharingAddReceiver)
 	if err != nil {
 		return nil, err
 	}
@@ -337,7 +306,7 @@ func (w *Client) ProfitSharingRemoveReceiver(ctx context.Context, bm gopay.BodyM
 	}
 	// 设置签名类型，官方文档此接口只支持 HMAC_SHA256
 	bm.Set("sign_type", SignType_HMAC_SHA256)
-	bs, err := w.doProdPost(ctx, bm, profitSharingRemoveReceiver, nil)
+	bs, err := w.doProdPost(ctx, bm, profitSharingRemoveReceiver)
 	if err != nil {
 		return nil, err
 	}
@@ -361,15 +330,57 @@ func (w *Client) ProfitSharingFinish(ctx context.Context, bm gopay.BodyMap) (wxR
 	}
 	// 设置签名类型，官方文档此接口只支持 HMAC_SHA256
 	bm.Set("sign_type", SignType_HMAC_SHA256)
-	tlsConfig, err := w.addCertConfig(nil, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	bs, err := w.doProdPost(ctx, bm, profitSharingFinish, tlsConfig)
+	bs, err := w.doProdPostTLS(ctx, bm, profitSharingFinish)
 	if err != nil {
 		return nil, err
 	}
 	wxRsp = new(ProfitSharingResponse)
+	if err = xml.Unmarshal(bs, wxRsp); err != nil {
+		return nil, fmt.Errorf("[%w]: %v, bytes: %s", gopay.UnmarshalErr, err, string(bs))
+	}
+	return wxRsp, nil
+}
+
+// 服务商可通过调用此接口查询订单剩余待分金额
+// 接口频率：30QPS
+// 微信文档：https://pay.weixin.qq.com/wiki/doc/api/allocation_sl.php?chapter=25_10&index=7
+func (w *Client) ProfitSharingOrderAmountQuery(ctx context.Context, bm gopay.BodyMap) (wxRsp *ProfitSharingOrderAmountQueryResponse, err error) {
+	err = bm.CheckEmptyError("mch_id", "transaction_id", "nonce_str")
+	if err != nil {
+		return nil, err
+	}
+
+	// 设置签名类型，官方文档此接口只支持 HMAC_SHA256
+	bm.Set("sign_type", SignType_HMAC_SHA256)
+	bs, err := w.doProdPostTLS(ctx, bm, profitSharingOrderAmountQuery)
+	if err != nil {
+		return nil, err
+	}
+	wxRsp = new(ProfitSharingOrderAmountQueryResponse)
+	if err = xml.Unmarshal(bs, wxRsp); err != nil {
+		return nil, fmt.Errorf("[%w]: %v, bytes: %s", gopay.UnmarshalErr, err, string(bs))
+	}
+	return wxRsp, nil
+}
+
+// 服务商可以查询子商户设置的允许服务商分账的最大比例
+// 接口频率：30QPS
+// 微信文档：https://pay.weixin.qq.com/wiki/doc/api/allocation_sl.php?chapter=25_10&index=7
+func (w *Client) ProfitSharingMerchantRatioQuery(ctx context.Context, bm gopay.BodyMap) (wxRsp *ProfitSharingMerchantRatioQuery, err error) {
+	err = bm.CheckEmptyError("mch_id", "nonce_str")
+	if err != nil {
+		return nil, err
+	}
+	if (bm.GetString("sub_mch_id") == gopay.NULL) && (bm.GetString("brand_mch_id") == gopay.NULL) {
+		return nil, errors.New("param sub_mch_id and brand_mch_id can not be null at the same time")
+	}
+	// 设置签名类型，官方文档此接口只支持 HMAC_SHA256
+	bm.Set("sign_type", SignType_HMAC_SHA256)
+	bs, err := w.doProdPostTLS(ctx, bm, profitSharingMerchantRatioQuery)
+	if err != nil {
+		return nil, err
+	}
+	wxRsp = new(ProfitSharingMerchantRatioQuery)
 	if err = xml.Unmarshal(bs, wxRsp); err != nil {
 		return nil, fmt.Errorf("[%w]: %v, bytes: %s", gopay.UnmarshalErr, err, string(bs))
 	}
@@ -389,16 +400,12 @@ func (w *Client) ProfitSharingReturn(ctx context.Context, bm gopay.BodyMap) (wxR
 		return nil, err
 	}
 
-	if (bm.GetString("order_id") == util.NULL) && (bm.GetString("out_order_no") == util.NULL) {
+	if (bm.GetString("order_id") == gopay.NULL) && (bm.GetString("out_order_no") == gopay.NULL) {
 		return nil, errors.New("param order_id and out_order_no can not be null at the same time")
 	}
 	// 设置签名类型，官方文档此接口只支持 HMAC_SHA256
 	bm.Set("sign_type", SignType_HMAC_SHA256)
-	tlsConfig, err := w.addCertConfig(nil, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	bs, err := w.doProdPost(ctx, bm, profitSharingReturn, tlsConfig)
+	bs, err := w.doProdPostTLS(ctx, bm, profitSharingReturn)
 	if err != nil {
 		return nil, err
 	}
@@ -419,12 +426,12 @@ func (w *Client) ProfitSharingReturnQuery(ctx context.Context, bm gopay.BodyMap)
 		return nil, err
 	}
 
-	if (bm.GetString("order_id") == util.NULL) && (bm.GetString("out_order_no") == util.NULL) {
+	if (bm.GetString("order_id") == gopay.NULL) && (bm.GetString("out_order_no") == gopay.NULL) {
 		return nil, errors.New("param order_id and out_order_no can not be null at the same time")
 	}
 	// 设置签名类型，官方文档此接口只支持 HMAC_SHA256
 	bm.Set("sign_type", SignType_HMAC_SHA256)
-	bs, err := w.doProdPost(ctx, bm, profitSharingReturnQuery, nil)
+	bs, err := w.doProdPost(ctx, bm, profitSharingReturnQuery)
 	if err != nil {
 		return nil, err
 	}

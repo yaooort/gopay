@@ -5,43 +5,71 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"runtime"
+	"time"
 
 	"github.com/go-pay/gopay"
-	"github.com/go-pay/gopay/pkg/xhttp"
-	"github.com/go-pay/gopay/pkg/xlog"
+	"github.com/go-pay/util/retry"
+	"github.com/go-pay/xhttp"
+	"github.com/go-pay/xlog"
 )
+
+func (c *Client) goAuthRefreshToken() {
+	defer func() {
+		if r := recover(); r != nil {
+			buf := make([]byte, 64<<10)
+			buf = buf[:runtime.Stack(buf, false)]
+			xlog.Errorf("paypal_goAuthRefreshToken: panic recovered: %s\n%s", r, buf)
+		}
+	}()
+	for {
+		time.Sleep(time.Duration(c.ExpiresIn/2) * time.Second)
+		err := retry.Retry(func() error {
+			_, err := c.GetAccessToken()
+			if err != nil {
+				return err
+			}
+			return nil
+		}, 3, time.Second)
+		if err != nil {
+			xlog.Errorf("PayPal GetAccessToken Error: %s", err.Error())
+		}
+	}
+}
+
+// =====================================================================================================================
 
 // 获取AccessToken（Get an access token）
 // 文档：https://developer.paypal.com/docs/api/reference/get-an-access-token
 func (c *Client) GetAccessToken() (token *AccessToken, err error) {
 	var (
-		baseUrl = baseUrlProd
+		baseUrl = c.baseUrlProd
 		url     string
 	)
 	if !c.IsProd {
-		baseUrl = baseUrlSandbox
+		baseUrl = c.baseUrlSandbox
 	}
 	url = baseUrl + getAccessToken
 	// Authorization
 	authHeader := AuthorizationPrefixBasic + base64.StdEncoding.EncodeToString([]byte(c.Clientid+":"+c.Secret))
-	// Request
-	httpClient := xhttp.NewClient()
-	httpClient.Header.Add(HeaderAuthorization, authHeader)
-	httpClient.Header.Add("Accept", "*/*")
+	req := c.hc.Req(xhttp.TypeFormData)
+	req.Header.Add(HeaderAuthorization, authHeader)
+	req.Header.Add("Accept", "*/*")
 	// Body
 	bm := make(gopay.BodyMap)
 	bm.Set("grant_type", "client_credentials")
 	if c.DebugSwitch == gopay.DebugOn {
-		xlog.Debugf("PayPal_RequestBody: %s", bm.JsonBody())
-		xlog.Debugf("PayPal_Authorization: %s", authHeader)
+		xlog.Debugf("PayPal_Url: %s", url)
+		xlog.Debugf("PayPal_Req_Body: %s", bm.JsonBody())
+		xlog.Debugf("PayPal_Req_Headers: %#v", req.Header)
 	}
-	res, bs, err := httpClient.Type(xhttp.TypeForm).Post(url).SendBodyMap(bm).EndBytes(c.ctx)
+	res, bs, err := req.Post(url).SendBodyMap(bm).EndBytes(c.ctx)
 	if err != nil {
 		return nil, err
 	}
 	if c.DebugSwitch == gopay.DebugOn {
 		xlog.Debugf("PayPal_Response: %d > %s", res.StatusCode, string(bs))
-		xlog.Debugf("PayPal_Headers: %#v", res.Header)
+		xlog.Debugf("PayPal_Rsp_Headers: %#v", res.Header)
 	}
 	if res.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP Request Error, StatusCode = %d", res.StatusCode)

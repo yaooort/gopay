@@ -6,8 +6,7 @@ import (
 	"net/http"
 
 	"github.com/go-pay/gopay"
-	"github.com/go-pay/gopay/pkg/util"
-	"github.com/go-pay/gopay/pkg/xhttp"
+	"github.com/go-pay/xhttp"
 )
 
 // Client AppleClient
@@ -17,6 +16,7 @@ type Client struct {
 	kid        string // Your private key ID from App Store Connect (Ex: 2X9R4HXF34)
 	isProd     bool   // 是否是正式环境
 	privateKey *ecdsa.PrivateKey
+	hc         *xhttp.Client
 }
 
 // NewClient 初始化Apple客户端
@@ -26,7 +26,7 @@ type Client struct {
 // privateKey：私钥文件读取后的字符串内容
 // isProd：是否是正式环境
 func NewClient(iss, bid, kid, privateKey string, isProd bool) (client *Client, err error) {
-	if iss == util.NULL || bid == util.NULL || kid == util.NULL || privateKey == util.NULL {
+	if iss == gopay.NULL || bid == gopay.NULL || kid == gopay.NULL || privateKey == gopay.NULL {
 		return nil, gopay.MissAppleInitParamErr
 	}
 	ecPrivateKey, err := ParseECPrivateKeyFromPEM([]byte(privateKey))
@@ -43,6 +43,7 @@ func NewClient(iss, bid, kid, privateKey string, isProd bool) (client *Client, e
 		kid:        kid,
 		privateKey: ecPrivateKey,
 		isProd:     isProd,
+		hc:         xhttp.NewClient(),
 	}
 	return client, nil
 }
@@ -56,9 +57,9 @@ func (c *Client) doRequestGet(ctx context.Context, path string) (res *http.Respo
 	if err != nil {
 		return nil, nil, err
 	}
-	cli := xhttp.NewClient()
-	cli.Header.Set("Authorization", "Bearer "+token)
-	res, bs, err = cli.Type(xhttp.TypeJSON).Get(uri).EndBytes(ctx)
+	req := c.hc.Req()
+	req.Header.Set("Authorization", "Bearer "+token)
+	res, bs, err = req.Get(uri).EndBytes(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -74,9 +75,9 @@ func (c *Client) doRequestPost(ctx context.Context, path string, bm gopay.BodyMa
 	if err != nil {
 		return nil, nil, err
 	}
-	cli := xhttp.NewClient()
-	cli.Header.Set("Authorization", "Bearer "+token)
-	res, bs, err = cli.Type(xhttp.TypeJSON).Post(uri).SendBodyMap(bm).EndBytes(ctx)
+	req := c.hc.Req()
+	req.Header.Set("Authorization", "Bearer "+token)
+	res, bs, err = req.Post(uri).SendBodyMap(bm).EndBytes(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -92,9 +93,9 @@ func (c *Client) doRequestPut(ctx context.Context, path string, bm gopay.BodyMap
 	if err != nil {
 		return nil, nil, err
 	}
-	cli := xhttp.NewClient()
-	cli.Header.Set("Authorization", "Bearer "+token)
-	res, bs, err = cli.Type(xhttp.TypeJSON).Put(uri).SendBodyMap(bm).EndBytes(ctx)
+	req := c.hc.Req()
+	req.Header.Set("Authorization", "Bearer "+token)
+	res, bs, err = req.Put(uri).SendBodyMap(bm).EndBytes(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
