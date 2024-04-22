@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/go-pay/gopay"
+	"github.com/yaooort/gopay"
 	"github.com/go-pay/util/convert"
 )
 

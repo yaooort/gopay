@@ -5,8 +5,8 @@ import (
 	"crypto/ecdsa"
 	"net/http"
 
-	"github.com/go-pay/gopay"
 	"github.com/go-pay/xhttp"
+	"github.com/yaooort/gopay"
 )
 
 // Client AppleClient

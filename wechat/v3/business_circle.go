@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/go-pay/gopay"
+	"github.com/yaooort/gopay"
 )
 
 // 商圈积分同步

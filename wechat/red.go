@@ -10,7 +10,7 @@ import (
 	"encoding/xml"
 	"fmt"
 
-	"github.com/go-pay/gopay"
+	"github.com/yaooort/gopay"
 )
 
 // 发放现金红包

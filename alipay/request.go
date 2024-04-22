@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-pay/gopay"
+	"github.com/yaooort/gopay"
 	"github.com/go-pay/xhttp"
 	"github.com/go-pay/xlog"
 	"github.com/go-pay/xtime"

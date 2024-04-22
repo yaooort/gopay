@@ -1,10 +1,10 @@
 package wechat
 
 import (
-	"github.com/go-pay/gopay"
-	"github.com/go-pay/gopay/wechat"
 	"github.com/go-pay/util"
 	"github.com/go-pay/xlog"
+	"github.com/yaooort/gopay"
+	"github.com/yaooort/gopay/wechat"
 )
 
 func Micropay() {

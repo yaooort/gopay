@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/go-pay/gopay"
+	"github.com/yaooort/gopay"
 )
 
 // APP下单API

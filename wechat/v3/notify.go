@@ -8,8 +8,8 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/go-pay/gopay"
 	"github.com/go-pay/xlog"
+	"github.com/yaooort/gopay"
 )
 
 type Resource struct {

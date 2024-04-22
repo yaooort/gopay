@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-pay/gopay"
 	"github.com/go-pay/util"
 	"github.com/go-pay/xhttp"
 	"github.com/go-pay/xlog"
+	"github.com/yaooort/gopay"
 )
 
 func (c *ClientV3) doProdPostWithHeader(ctx context.Context, headerMap map[string]string, bm gopay.BodyMap, path, authorization string) (res *http.Response, si *SignInfo, bs []byte, err error) {

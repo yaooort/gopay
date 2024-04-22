@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-pay/gopay"
 	"github.com/go-pay/util"
 	"github.com/go-pay/xhttp"
 	"github.com/go-pay/xlog"
+	"github.com/yaooort/gopay"
 )
 
 // Client lakala

@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/go-pay/gopay"
+	"github.com/yaooort/gopay"
 )
 
 // 图片资源下载

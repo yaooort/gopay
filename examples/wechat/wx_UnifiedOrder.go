@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-pay/gopay"
-	"github.com/go-pay/gopay/wechat"
+	"github.com/yaooort/gopay"
+	"github.com/yaooort/gopay/wechat"
 	"github.com/go-pay/util"
 	"github.com/go-pay/xlog"
 )

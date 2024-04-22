@@ -3,7 +3,7 @@ package paypal
 import (
 	"context"
 
-	"github.com/go-pay/gopay"
+	"github.com/yaooort/gopay"
 	"github.com/go-pay/xhttp"
 )
 

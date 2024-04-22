@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/go-pay/crypto/xpem"
-	"github.com/go-pay/gopay"
+	"github.com/yaooort/gopay"
 	"github.com/go-pay/util"
 	"github.com/go-pay/util/convert"
 	"github.com/go-pay/xlog"

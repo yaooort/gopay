@@ -3,8 +3,8 @@ package alipay
 import (
 	"testing"
 
-	"github.com/go-pay/gopay"
 	"github.com/go-pay/xlog"
+	"github.com/yaooort/gopay"
 )
 
 func TestOpenAppQrcodeCreate(t *testing.T) {

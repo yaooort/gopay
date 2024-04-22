@@ -15,7 +15,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/go-pay/gopay"
+	"github.com/yaooort/gopay"
 	"github.com/go-pay/util"
 	"github.com/go-pay/xhttp"
 	"github.com/go-pay/xlog"

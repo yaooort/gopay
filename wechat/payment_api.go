@@ -20,7 +20,7 @@ import (
 	"strings"
 
 	xaes "github.com/go-pay/crypto/aes"
-	"github.com/go-pay/gopay"
+	"github.com/yaooort/gopay"
 	"github.com/go-pay/xhttp"
 )
 

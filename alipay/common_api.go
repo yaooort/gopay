@@ -16,7 +16,7 @@ import (
 	xaes "github.com/go-pay/crypto/aes"
 	"github.com/go-pay/crypto/xpem"
 	"github.com/go-pay/crypto/xrsa"
-	"github.com/go-pay/gopay"
+	"github.com/yaooort/gopay"
 	"github.com/go-pay/xhttp"
 	"github.com/go-pay/xtime"
 )

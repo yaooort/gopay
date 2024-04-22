@@ -18,7 +18,7 @@ import (
 	"github.com/go-pay/crypto/aes"
 	"github.com/go-pay/crypto/xpem"
 	"github.com/go-pay/errgroup"
-	"github.com/go-pay/gopay"
+	"github.com/yaooort/gopay"
 	"github.com/go-pay/util"
 	"github.com/go-pay/util/convert"
 	"github.com/go-pay/util/retry"
