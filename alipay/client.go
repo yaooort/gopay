@@ -35,6 +35,7 @@ type Client struct {
 	DebugSwitch        gopay.DebugSwitch
 	location           *time.Location
 	hc                 *xhttp.Client
+	HttpMethod         string
 }
 
 // 初始化支付宝客户端
@@ -58,6 +59,7 @@ func NewClient(appid, privateKey string, isProd bool) (client *Client, err error
 		IsProd:      isProd,
 		privateKey:  priKey,
 		DebugSwitch: gopay.DebugOff,
+		HttpMethod:  "GET",
 		hc:          xhttp.NewClient(),
 	}
 	return client, nil

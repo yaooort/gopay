@@ -164,12 +164,18 @@ func (a *Client) doAliPay(ctx context.Context, bm gopay.BodyMap, method string, 
 	switch method {
 	case "alipay.trade.app.pay", "alipay.fund.auth.order.app.freeze":
 		return []byte(param), nil
-	case "alipay.trade.wap.pay", "alipay.trade.page.pay", "alipay.user.certify.open.certify":
+	case "alipay.trade.page.pay", "alipay.user.certify.open.certify":
 		if !a.IsProd {
 			return []byte(sandboxBaseUrl + "?" + param), nil
 		}
 		return []byte(baseUrl + "?" + param), nil
 	default:
+		if a.HttpMethod == "GET" && method == "alipay.trade.wap.pay" {
+			if !a.IsProd {
+				return []byte(sandboxBaseUrl + "?" + param), nil
+			}
+			return []byte(baseUrl + "?" + param), nil
+		}
 		url = baseUrlUtf8
 		if !a.IsProd {
 			url = sandboxBaseUrlUtf8
